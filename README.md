@@ -5,7 +5,7 @@
 
 ---
 
-`av` is a command-line tool that helps you manage your stacked PRs on GitHub. It
+`av` is a command-line tool that helps you manage your stacked PRs on GitHub and GitLab. It
 allows you to create a PR stacked on top of another PR, and it will
 automatically update the dependent PR when the base PR is updated. Read more at
 [Rethinking code reviews with stacked
@@ -72,6 +72,19 @@ $ av tree
   * master
 ```
 
+For GitLab repositories:
+
+```sh
+$ av tree
+  * feature-2 (HEAD)
+  │ https://gitlab.com/example/project/-/merge_requests/2
+  │
+  * feature-1
+  │ https://gitlab.com/example/project/-/merge_requests/1
+  │
+  * master
+```
+
 Merge the first PR:
 
 ```sh
@@ -83,14 +96,14 @@ Sync the stack:
 ```sh
 $ av sync
 
-  ✓ GitHub fetch is done
+  ✓ GitHub/GitLab fetch is done
   ✓ Restack is done
 
     * ✓ feature-2 f9d85fe
     │
     * master 7fd1a60
 
-  ✓ Pushed to GitHub
+  ✓ Pushed to GitHub/GitLab
 
     Following branches do not need a push.
 
@@ -113,10 +126,11 @@ $ av sync
 
 # Installation
 
-`av` is available for macOS and Linux. In order to interact with GitHub, `av`
-uses the GitHub API token. If you have [GitHub CLI](https://cli.github.com/)
+`av` is available for macOS and Linux. In order to interact with GitHub and GitLab, `av`
+uses API tokens. For GitHub, if you have [GitHub CLI](https://cli.github.com/)
 installed, `av` will use the token automatically from the GitHub CLI. It is
-recommended to install both.
+recommended to install GitHub CLI for GitHub repositories. For GitLab, you'll need to
+set up a Personal Access Token.
 
 ## macOS (Homebrew)
 
@@ -200,6 +214,8 @@ Extract the archive and add the executable to your PATH.
 
 # Setup
 
+## GitHub Setup
+
 1. Set up the GitHub CLI for GitHub authentication:
 
    ```sh
@@ -210,7 +226,26 @@ Extract the archive and add the executable to your PATH.
    [Configuration](https://docs.aviator.co/aviator-cli/configuration#github-personal-access-token)
    section.
 
-2. Set up the `av` CLI autocompletion:
+## GitLab Setup
+
+1. Create a Personal Access Token in GitLab:
+   - Go to GitLab → Settings → Access Tokens
+   - Create a token with `api` and `write_repository` scopes
+
+2. Configure the GitLab token:
+
+   ```sh
+   # Set via environment variable
+   export AV_GITLAB_TOKEN="your-gitlab-token"
+   
+   # Or for self-hosted GitLab instances
+   export AV_GITLAB_TOKEN="your-gitlab-token"
+   export AV_GITLAB_BASE_URL="https://gitlab.example.com"
+   ```
+
+## General Setup
+
+1. Set up the `av` CLI autocompletion:
 
    ```sh
    # Bash
@@ -219,7 +254,7 @@ Extract the archive and add the executable to your PATH.
    source <(av completion zsh)
    ```
 
-3. Initialize the repository:
+2. Initialize the repository:
 
    ```sh
    av init

@@ -12,4 +12,4 @@ av auth
 
 ## DESCRIPTION
 
-Verifies that GitHub and/or Aviator credentials are valid.
+Verifies that GitHub, GitLab, and/or Aviator credentials are valid.

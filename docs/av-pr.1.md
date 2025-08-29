@@ -14,7 +14,7 @@ av pr create [-t <title>| --title=<title>] [-b <body>| --body=<body>]
 
 ## DESCRIPTION
 
-Push the current branch and create a pull request if not exist. If the branch
+Push the current branch and create a pull request (GitHub) or merge request (GitLab) if not exist. If the branch
 has a parent branch, you need to make a pull-request for the parent first. If
 title and body are not provided, `$EDITOR` pops up and you are asked to provide
 them.
@@ -54,7 +54,7 @@ Existing pull requests will be updated accordingly.
 
 `--reviewers=<reviewers>`
 : Add reviewers to the pull request. The value should be a comma-separated list
-  of GitHub usernames or team names.
+  of usernames, team names (GitHub), or group names (GitLab).
 
 `--all [--current]`
 : Create pull requests for every branch in the current stack or up to the

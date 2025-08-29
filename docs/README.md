@@ -1,7 +1,16 @@
-# Aviator CLI manual pages
+# Aviator CLI Documentation
+
+This directory contains manual pages and additional documentation for Aviator CLI.
+
+## Manual Pages
 
 The Markdown files that end with `.\d.md` in this directory are manual pages for
 Aviator CLI.
+
+## Additional Documentation
+
+- `gitlab-setup.md` - Complete setup guide for GitLab repositories
+- `provider-differences.md` - Differences between GitHub and GitLab support
 
 ## Online manual documentation pages
 
