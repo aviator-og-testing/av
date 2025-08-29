@@ -116,3 +116,49 @@ func TestGitHubPullRequest_StateChecks(t *testing.T) {
 		})
 	}
 }
+
+func TestDetectProviderFromURL(t *testing.T) {
+	tests := []struct {
+		name         string
+		remoteURL    string
+		expectedType ProviderType
+	}{
+		{
+			name:         "GitHub.com HTTPS",
+			remoteURL:    "https://github.com/owner/repo.git",
+			expectedType: ProviderTypeGitHub,
+		},
+		{
+			name:         "GitHub.com SSH",
+			remoteURL:    "git@github.com:owner/repo.git",
+			expectedType: ProviderTypeGitHub,
+		},
+		{
+			name:         "GitLab.com HTTPS",
+			remoteURL:    "https://gitlab.com/owner/repo.git",
+			expectedType: ProviderTypeGitLab,
+		},
+		{
+			name:         "GitLab.com SSH",
+			remoteURL:    "git@gitlab.com:owner/repo.git",
+			expectedType: ProviderTypeGitLab,
+		},
+		{
+			name:         "Self-hosted GitLab",
+			remoteURL:    "https://gitlab.company.com/owner/repo.git",
+			expectedType: ProviderTypeGitLab,
+		},
+		{
+			name:         "Unknown URL defaults to GitHub",
+			remoteURL:    "https://unknown.com/owner/repo.git",
+			expectedType: ProviderTypeGitHub,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := DetectProviderFromURL(tt.remoteURL)
+			assert.Equal(t, tt.expectedType, result, "Provider detection mismatch for URL: %s", tt.remoteURL)
+		})
+	}
+}
