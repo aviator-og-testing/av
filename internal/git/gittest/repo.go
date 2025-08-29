@@ -25,6 +25,91 @@ func NewTempRepo(t *testing.T) *GitTestRepo {
 	return NewTempRepoWithGitHubServer(t, "http://github.invalid")
 }
 
+func NewTempRepoWithGitLabServer(t *testing.T, serverURL string) *GitTestRepo {
+	t.Helper()
+	var dir string
+	var remoteDir string
+	if os.Getenv("AV_TEST_PRESERVE_TEMP_REPO") != "" {
+		var err error
+		dir, err = os.MkdirTemp("", "repo") //nolint:usetesting
+		require.NoError(t, err)
+		t.Logf("Created git test repo: %s", dir)
+
+		remoteDir, err = os.MkdirTemp("", "remote-repo") //nolint:usetesting
+		require.NoError(t, err)
+		t.Logf("Created git remote test repo: %s", remoteDir)
+	} else {
+		dir = filepath.Join(t.TempDir(), "local")
+		require.NoError(t, os.MkdirAll(dir, 0o755))
+
+		remoteDir = filepath.Join(t.TempDir(), "remote")
+		require.NoError(t, os.MkdirAll(remoteDir, 0o755))
+	}
+	init := exec.CommandContext(t.Context(), "git", "init", "--initial-branch=main")
+	init.Dir = dir
+
+	err := init.Run()
+	require.NoError(t, err, "failed to initialize git repository")
+
+	remoteInit := exec.CommandContext(t.Context(), "git", "init", "--bare")
+	remoteInit.Dir = remoteDir
+
+	err = remoteInit.Run()
+	require.NoError(t, err, "failed to initialize remote git repository")
+
+	ggRepo, err := git.PlainOpen(dir)
+	require.NoError(t, err, "failed to open git repository")
+
+	repo := &GitTestRepo{dir, filepath.Join(dir, ".git"), ggRepo}
+	require.NoError(t, err, "failed to open repo")
+
+	settings := map[string]string{
+		"user.name":  "av-test",
+		"user.email": "av-test@nonexistent",
+	}
+	for k, v := range settings {
+		repo.Git(t, "config", k, v)
+	}
+
+	// Use GitLab URL format for remote
+	gitlabRemoteURL := fmt.Sprintf("git@%s:aviator-co/nonexistent.git", 
+		fmt.Sprintf("gitlab.%s", serverURL[7:])) // Remove "http://" and add "gitlab." prefix
+	repo.Git(t, "remote", "add", "origin", gitlabRemoteURL, "--master=main")
+
+	err = os.WriteFile(dir+"/README.md", []byte("# Hello World"), 0o644)
+	require.NoError(t, err, "failed to write README.md")
+
+	repo.Git(t, "add", "README.md")
+	repo.Git(t, "commit", "-m", "Initial commit")
+	// Skip push for GitLab as we don't have a real remote
+
+	// Write metadata for GitLab
+	db, _, err := jsonfiledb.OpenPath(filepath.Join(repo.GitDir, "av", "av.db"))
+	if err != nil {
+		require.NoError(t, err, "failed to open database")
+	}
+	tx := db.WriteTx()
+	tx.SetRepository(meta.Repository{
+		ID:    "P_nonexistent_",
+		Owner: "aviator-co",
+		Name:  "nonexistent",
+	})
+	require.NoError(t, tx.Commit(), "failed to write repository metadata")
+
+	err = os.WriteFile(
+		filepath.Join(repo.GitDir, "av", "config.yml"),
+		[]byte(fmt.Sprintf(`
+gitlab:
+    token: "glpat_dummy_valid_token"
+    baseUrl: %q
+`, serverURL)),
+		0o644,
+	)
+	require.NoError(t, err, "failed to write .git/av/config.yml")
+
+	return repo
+}
+
 func NewTempRepoWithGitHubServer(t *testing.T, serverURL string) *GitTestRepo {
 	t.Helper()
 	var dir string
