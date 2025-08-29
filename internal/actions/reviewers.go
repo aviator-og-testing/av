@@ -7,48 +7,51 @@ import (
 	"strings"
 
 	"emperror.dev/errors"
-	"github.com/aviator-co/av/internal/gh"
 	"github.com/aviator-co/av/internal/utils/colors"
-	"github.com/shurcooL/githubv4"
+	"github.com/aviator-co/av/internal/vcs"
 )
 
 // AddPullRequestReviewers adds the given reviewers to the given pull request.
-// It accepts a list of reviewers, which can be either GitHub user logins or
+// It accepts a list of reviewers, which can be either user logins or
 // team names in the format `@organization/team`.
+// Works with both GitHub and GitLab providers through the VCS abstraction.
 func AddPullRequestReviewers(
 	ctx context.Context,
-	client *gh.Client,
-	prID githubv4.ID,
+	provider vcs.Provider,
+	prID string,
 	reviewers []string,
 ) error {
 	_, _ = fmt.Fprint(os.Stderr,
 		"  - adding ", colors.UserInput(len(reviewers)), " reviewer(s) to pull request\n",
 	)
 
-	// We need to map the given reviewers to GitHub node IDs.
-	var reviewerIDs []githubv4.ID
-	var teamIDs []githubv4.ID
+	// We need to map the given reviewers to provider-specific user and team IDs.
+	var reviewerIDs []string
+	var teamIDs []string
 	for _, reviewer := range reviewers {
 		if ok, org, team := isTeamName(reviewer); ok {
-			team, err := client.OrganizationTeam(ctx, org, team)
+			// Handle team/group assignment
+			providerTeam, err := provider.GetOrganizationTeam(ctx, org, team)
 			if err != nil {
-				return err
+				return errors.WrapIff(err, "failed to get team %s/%s", org, team)
 			}
-			teamIDs = append(teamIDs, team.ID)
+			teamIDs = append(teamIDs, providerTeam.GetID())
 		} else {
-			user, err := client.User(ctx, reviewer)
+			// Handle individual user assignment
+			user, err := provider.GetUser(ctx, reviewer)
 			if err != nil {
-				return err
+				return errors.WrapIff(err, "failed to get user %s", reviewer)
 			}
-			reviewerIDs = append(reviewerIDs, user.ID)
+			reviewerIDs = append(reviewerIDs, user.GetID())
 		}
 	}
 
-	if _, err := client.RequestReviews(ctx, githubv4.RequestReviewsInput{
+	// Request reviews using the provider abstraction
+	if _, err := provider.RequestReviews(ctx, vcs.RequestReviewsInput{
 		PullRequestID: prID,
-		UserIDs:       &reviewerIDs,
-		TeamIDs:       &teamIDs,
-		Union:         gh.Ptr[githubv4.Boolean](true),
+		UserIDs:       reviewerIDs,
+		TeamIDs:       teamIDs,
+		Union:         true,
 	}); err != nil {
 		return errors.WrapIf(err, "requesting reviews")
 	}

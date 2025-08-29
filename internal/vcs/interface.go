@@ -91,6 +91,7 @@ type Provider interface {
 	GetRepository(ctx context.Context, owner, repo string) (Repository, error)
 	GetUser(ctx context.Context, login string) (User, error)
 	GetViewer(ctx context.Context) (User, error)
+	GetOrganizationTeam(ctx context.Context, org, team string) (Team, error)
 }
 
 type ProviderType string

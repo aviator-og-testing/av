@@ -112,6 +112,24 @@ func (gu *gitlabUser) GetLogin() string {
 	return ""
 }
 
+type gitlabTeam struct {
+	team *gitlab.Team
+}
+
+func (gt *gitlabTeam) GetID() string {
+	if gt.team != nil {
+		return strconv.FormatInt(gt.team.ID, 10)
+	}
+	return ""
+}
+
+func (gt *gitlabTeam) GetName() string {
+	if gt.team != nil {
+		return gt.team.Name
+	}
+	return ""
+}
+
 func (g *GitLabProvider) CreatePR(ctx context.Context, input CreatePullRequestInput) (PullRequest, error) {
 	glInput := gitlab.CreateMergeRequestInput{
 		ProjectID:    input.RepositoryID,
@@ -302,6 +320,19 @@ func (g *GitLabProvider) GetViewer(ctx context.Context) (User, error) {
 	}
 	
 	return &gitlabUser{user: user}, nil
+}
+
+func (g *GitLabProvider) GetOrganizationTeam(ctx context.Context, org, team string) (Team, error) {
+	// In GitLab, teams are groups and the org/team pattern maps to group paths
+	// We build the group path as "org/team" to match GitLab's hierarchical structure
+	groupPath := org + "/" + team
+	
+	glTeam, err := g.client.GetTeam(ctx, groupPath)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to get organization team")
+	}
+	
+	return &gitlabTeam{team: glTeam}, nil
 }
 
 // parseGitLabMergeRequestID parses a GitLab merge request ID to extract project ID and IID
