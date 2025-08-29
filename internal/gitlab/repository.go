@@ -16,13 +16,6 @@ type Client struct {
 	// Implementation will be added when client.go is created
 }
 
-// User represents a GitLab user (will be implemented in user.go)  
-type User struct {
-	ID       int64  `json:"id"`
-	Username string `json:"username"`
-	Name     string `json:"name"`
-	Email    string `json:"email"`
-}
 
 // Repository represents a GitLab project/repository, mirroring GitHub's Repository structure
 type Repository struct {
