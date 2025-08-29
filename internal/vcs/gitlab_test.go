@@ -212,3 +212,38 @@ func TestGitLabProvider_parseGitLabMergeRequestID_EdgeCases(t *testing.T) {
 	assert.Equal(t, "", projectID)
 	assert.Equal(t, int64(0), iid)
 }
+
+func TestGitLabTeam_WrapperMethods(t *testing.T) {
+	testTeam := &gitlab.Team{
+		ID:   789,
+		Name: "test-team",
+		Path: "test-team",
+	}
+	
+	wrapper := &gitlabTeam{team: testTeam}
+	
+	assert.Equal(t, "789", wrapper.GetID())
+	assert.Equal(t, "test-team", wrapper.GetName())
+}
+
+func TestGitLabTeam_NilSafety(t *testing.T) {
+	wrapper := &gitlabTeam{team: nil}
+	
+	assert.Equal(t, "", wrapper.GetID())
+	assert.Equal(t, "", wrapper.GetName())
+}
+
+func TestGitLabPullRequest_BodyFallback(t *testing.T) {
+	// Test Body field takes precedence
+	testMR := &gitlab.MergeRequest{
+		Description: "Original description",
+		Body:        "Override body",
+	}
+	
+	wrapper := &gitlabPullRequest{mr: testMR}
+	assert.Equal(t, "Override body", wrapper.GetBody())
+	
+	// Test fallback to Description when Body is empty
+	testMR.Body = ""
+	assert.Equal(t, "Original description", wrapper.GetBody())
+}
