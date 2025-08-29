@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"strings"
 
@@ -9,6 +10,7 @@ import (
 	"github.com/aviator-co/av/internal/actions"
 	"github.com/aviator-co/av/internal/gh"
 	"github.com/aviator-co/av/internal/gh/ghui"
+	"github.com/aviator-co/av/internal/vcs"
 	"github.com/aviator-co/av/internal/git"
 	"github.com/aviator-co/av/internal/git/gitui"
 	"github.com/aviator-co/av/internal/meta"
@@ -39,7 +41,7 @@ var syncFlags struct {
 
 var syncCmd = &cobra.Command{
 	Use:   "sync",
-	Short: "Synchronize stacked branches with GitHub",
+	Short: "Synchronize stacked branches with remote provider",
 	Long: strings.TrimSpace(`
 Synchronize stacked branches to be up-to-date with their parent branches.
 
@@ -90,16 +92,31 @@ base branch.
 		if err != nil {
 			return err
 		}
-		client, err := getGitHubClient(ctx)
+		origin, err := repo.Origin(ctx)
 		if err != nil {
 			return err
 		}
+		provider, err := vcs.DetectAndCreateProvider(ctx, origin.URL.String())
+		if err != nil {
+			// Enhance error message with provider-specific guidance
+			if providerErr, ok := err.(vcs.ProviderError); ok {
+				return errors.New(providerErr.Error())
+			}
+			return errors.Wrapf(err, "failed to initialize provider for repository at %s", origin.URL.String())
+		}
+
+		// For backward compatibility, also try to get GitHub client for GitHub repos
+		var githubClient *gh.Client
+		if vcs.DetectProviderFromURL(origin.URL.String()) == vcs.ProviderTypeGitHub {
+			githubClient, _ = getGitHubClient(ctx)
+		}
 
 		return uiutils.RunBubbleTea(&syncViewModel{
-			repo:   repo,
-			db:     db,
-			client: client,
-			help:   help.New(),
+			repo:         repo,
+			db:           db,
+			provider:     provider,
+			githubClient: githubClient,
+			help:         help.New(),
 		})
 	},
 }
@@ -116,10 +133,11 @@ type syncState struct {
 }
 
 type syncViewModel struct {
-	repo   *git.Repo
-	db     meta.DB
-	client *gh.Client
-	help   help.Model
+	repo         *git.Repo
+	db           meta.DB
+	provider     vcs.Provider
+	githubClient *gh.Client // For backward compatibility with existing GitHub-specific UI
+	help         help.Model
 
 	preAvSyncHookMessage string
 
@@ -130,8 +148,8 @@ type syncViewModel struct {
 	githubPushModel  *ghui.GitHubPushModel
 	pruneBranchModel *gitui.PruneBranchModel
 
-	pushingToGitHub bool
-	pruningBranches bool
+	pushingToProvider bool
+	pruningBranches   bool
 
 	quitWithConflict bool
 	err              error
@@ -208,7 +226,7 @@ func (vm *syncViewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		vm.githubPushModel, cmd = vm.githubPushModel.Update(msg)
 		return vm, cmd
 	case *ghui.GitHubPushDone:
-		vm.pushingToGitHub = false
+		vm.pushingToProvider = false
 		return vm, vm.initPruneBranches()
 
 	case *gitui.PruneBranchProgress:
@@ -246,7 +264,7 @@ func (vm *syncViewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				_, cmd := vm.syncAllPrompt.Update(msg)
 				return vm, cmd
 			}
-		} else if vm.pushingToGitHub {
+		} else if vm.pushingToProvider {
 			switch msg.String() {
 			case "ctrl+c":
 				return vm, tea.Quit
@@ -409,6 +427,25 @@ func (vm *syncViewModel) writeState(seqModel *sequencerui.RestackState) error {
 }
 
 func (vm *syncViewModel) createGitHubFetchModel() (*ghui.GitHubFetchModel, error) {
+	// For now, continue using GitHub-specific fetch model for backward compatibility
+	// TODO: Replace with generic provider-based fetch model
+	if vm.githubClient == nil {
+		// Provide specific guidance based on provider type
+		origin, err := vm.repo.Origin(context.Background())
+		if err != nil {
+			return nil, errors.New("GitHub client not available for this repository type")
+		}
+		
+		providerType := vcs.DetectProviderFromURL(origin.URL.String())
+		switch providerType {
+		case vcs.ProviderTypeGitLab:
+			return nil, errors.New("GitLab repositories require GitLab authentication. Please ensure you have configured your GitLab token using AV_GITLAB_TOKEN environment variable or 'gitlab.token' in your av config file")
+		case vcs.ProviderTypeGitHub:
+			return nil, errors.New("GitHub client not available. Please ensure you have configured your GitHub token using AV_GITHUB_TOKEN environment variable or 'github.token' in your av config file")
+		default:
+			return nil, errors.Errorf("Unsupported repository provider: %s. Currently supported providers are GitHub and GitLab", origin.URL.String())
+		}
+	}
 	ctx := context.Background()
 	status, err := vm.repo.Status(ctx)
 	if err != nil {
@@ -452,7 +489,7 @@ func (vm *syncViewModel) createGitHubFetchModel() (*ghui.GitHubFetchModel, error
 	return ghui.NewGitHubFetchModel(
 		vm.repo,
 		vm.db,
-		vm.client,
+		vm.githubClient,
 		currentBranchRef,
 		targetBranches,
 	), nil
@@ -526,15 +563,29 @@ func (vm *syncViewModel) createState() (*savedSyncState, error) {
 }
 
 func (vm *syncViewModel) initPushBranches() tea.Cmd {
-	vm.githubPushModel = ghui.NewGitHubPushModel(
-		vm.repo,
-		vm.db,
-		vm.client,
-		vm.state.Push,
-		vm.state.TargetBranches,
-	)
-	vm.pushingToGitHub = true
-	return vm.githubPushModel.Init()
+	// For now, continue using GitHub-specific push model for backward compatibility
+	// TODO: Replace with generic provider-based push model
+	if vm.githubClient != nil {
+		vm.githubPushModel = ghui.NewGitHubPushModel(
+			vm.repo,
+			vm.db,
+			vm.githubClient,
+			vm.state.Push,
+			vm.state.TargetBranches,
+		)
+		vm.pushingToProvider = true
+		return vm.githubPushModel.Init()
+	}
+	// For non-GitHub providers, show informative message and go directly to prune
+	// TODO: Implement generic provider-based push
+	origin, _ := vm.repo.Origin(context.Background())
+	if origin != nil {
+		providerType := vcs.DetectProviderFromURL(origin.URL.String())
+		if providerType == vcs.ProviderTypeGitLab {
+			fmt.Fprint(os.Stderr, "Note: GitLab push operations will be available in a future release. Skipping push step.\n")
+		}
+	}
+	return vm.initPruneBranches()
 }
 
 func (vm *syncViewModel) initPruneBranches() tea.Cmd {
