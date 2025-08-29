@@ -15,6 +15,7 @@ import (
 	"github.com/aviator-co/av/internal/actions"
 	"github.com/aviator-co/av/internal/config"
 	"github.com/aviator-co/av/internal/gh"
+	"github.com/aviator-co/av/internal/gitlab"
 	"github.com/aviator-co/av/internal/utils/colors"
 	"github.com/fatih/color"
 	"github.com/kr/text"
@@ -182,6 +183,8 @@ func checkCliVersion() {
 var (
 	once             sync.Once
 	lazyGithubClient *gh.Client
+	onceGitLab       sync.Once
+	lazyGitLabClient *gitlab.Client
 )
 
 func discoverGitHubAPIToken(ctx context.Context) string {
@@ -210,4 +213,24 @@ func getGitHubClient(ctx context.Context) (*gh.Client, error) {
 		lazyGithubClient, err = gh.NewClient(ctx, token)
 	})
 	return lazyGithubClient, err
+}
+
+func discoverGitLabAPIToken(ctx context.Context) string {
+	if config.Av.GitLab.Token != "" {
+		return config.Av.GitLab.Token
+	}
+	return ""
+}
+
+func getGitLabClient(ctx context.Context) (*gitlab.Client, error) {
+	token := discoverGitLabAPIToken(ctx)
+	if token == "" {
+		return nil, errNoGitLabToken
+	}
+	var err error
+	onceGitLab.Do(func() {
+		baseURL := config.Av.GitLab.BaseURL
+		lazyGitLabClient, err = gitlab.NewClient(ctx, token, baseURL)
+	})
+	return lazyGitLabClient, err
 }

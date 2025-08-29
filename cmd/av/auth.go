@@ -7,6 +7,7 @@ import (
 
 	"emperror.dev/errors"
 	"github.com/aviator-co/av/internal/gh"
+	"github.com/aviator-co/av/internal/gitlab"
 
 	"github.com/aviator-co/av/internal/avgql"
 	"github.com/aviator-co/av/internal/utils/colors"
@@ -23,6 +24,9 @@ var authCmd = &cobra.Command{
 			fmt.Fprintln(os.Stderr, colors.Warning(err.Error()))
 		}
 		if err := checkGitHubAuthStatus(cmd.Context()); err != nil {
+			fmt.Fprintln(os.Stderr, colors.Failure(err.Error()))
+		}
+		if err := checkGitLabAuthStatus(cmd.Context()); err != nil {
 			fmt.Fprintln(os.Stderr, colors.Failure(err.Error()))
 		}
 	},
@@ -72,6 +76,30 @@ func checkGitHubAuthStatus(ctx context.Context) error {
 	fmt.Fprint(os.Stderr,
 		"Logged in to GitHub as ", colors.UserInput(viewer.Name),
 		" (", colors.UserInput(viewer.Login), ").\n",
+	)
+	return nil
+}
+
+func checkGitLabAuthStatus(ctx context.Context) error {
+	glClient, err := getGitLabClient(ctx)
+	if err != nil {
+		return err
+	}
+
+	viewer, err := glClient.GetViewer(ctx)
+	if err != nil {
+		// GitLab API returns 401 Unauthorized if the token is invalid or expired.
+		if gitlab.IsHTTPUnauthorized(err) {
+			return errors.New(
+				"You are not logged in to GitLab. Please verify that your API token is correct.",
+			)
+		}
+		return errors.Wrap(err, "Failed to query GitLab")
+	}
+
+	fmt.Fprint(os.Stderr,
+		"Logged in to GitLab as ", colors.UserInput(viewer.Name),
+		" (", colors.UserInput(viewer.Username), ").\n",
 	)
 	return nil
 }
