@@ -122,6 +122,18 @@ func (gv *githubViewer) GetLogin() string {
 	return gv.viewer.Login
 }
 
+type githubTeam struct {
+	team *gh.Team
+}
+
+func (gt *githubTeam) GetID() string {
+	return string(gt.team.ID)
+}
+
+func (gt *githubTeam) GetName() string {
+	return gt.team.Name
+}
+
 func (g *GitHubProvider) CreatePR(ctx context.Context, input CreatePullRequestInput) (PullRequest, error) {
 	ghInput := githubv4.CreatePullRequestInput{
 		RepositoryID: githubv4.ID(input.RepositoryID),
@@ -279,6 +291,15 @@ func (g *GitHubProvider) GetViewer(ctx context.Context) (User, error) {
 	}
 	
 	return &githubViewer{viewer: viewer}, nil
+}
+
+func (g *GitHubProvider) GetOrganizationTeam(ctx context.Context, org, team string) (Team, error) {
+	ghTeam, err := g.client.OrganizationTeam(ctx, org, team)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to get organization team")
+	}
+	
+	return &githubTeam{team: ghTeam}, nil
 }
 
 func init() {
