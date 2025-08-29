@@ -16,7 +16,7 @@ import (
 
 var authCmd = &cobra.Command{
 	Use:          "auth",
-	Short:        "Check user authentication status",
+	Short:        "Check user authentication status for GitHub, GitLab, and Aviator",
 	SilenceUsage: true,
 	Args:         cobra.NoArgs,
 	Run: func(cmd *cobra.Command, _ []string) {

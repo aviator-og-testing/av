@@ -6,7 +6,7 @@ av - Aviator CLI
 
 ## DESCRIPTION
 
-**av** allows you to manage stacked pull requests with Aviator.
+**av** allows you to manage stacked pull requests with Aviator. Works with both GitHub and GitLab repositories.
 
 ## SUBCOMMANDS
 
@@ -15,7 +15,7 @@ av - Aviator CLI
 - av-branch(1): Create or rename a branch in the stack
 - av-commit(1): Record changes to the repository with commits
 - av-diff(1): Show the diff between working tree and parent branch
-- av-fetch(1): Fetch latest repository state from GitHub
+- av-fetch(1): Fetch latest repository state from GitHub or GitLab
 - av-init(1): Initialize the repository for `av`
 - av-next(1): Checkout the next branch in the stack
 - av-orphan(1): Orphan branches that are managed by `av`
@@ -27,7 +27,7 @@ av - Aviator CLI
 - av-restack(1): Rebase the stacked branches
 - av-split-commit(1): Split a commit into multiple commits
 - av-switch(1): Interactively switch to a different branch
-- av-sync(1): Synchronize stacked branches with GitHub
+- av-sync(1): Synchronize stacked branches with GitHub or GitLab
 - av-tidy(1): Tidy stacked branches
 - av-tree(1): Show the tree of stacked branches
 
