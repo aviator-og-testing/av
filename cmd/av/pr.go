@@ -16,6 +16,7 @@ import (
 	"github.com/aviator-co/av/internal/meta"
 	"github.com/aviator-co/av/internal/utils/cleanup"
 	"github.com/aviator-co/av/internal/utils/colors"
+	"github.com/aviator-co/av/internal/vcs"
 	"github.com/shurcooL/githubv4"
 	"github.com/shurcooL/graphql"
 	"github.com/sirupsen/logrus"
@@ -40,22 +41,27 @@ var prCmd = &cobra.Command{
 	Short: "Create a pull request for the current branch",
 	Long: strings.TrimSpace(`
 Create a pull request for the current branch.
+Works with both GitHub and GitLab repositories.
 
 Examples:
   Create a PR with an empty body:
     $ av pr --title "My PR"
 
-  Create a pull request, specifying the body of the PR from standard input.
+  Create a pull request, specifying the body of the PR from standard input:
     $ av pr --title "Implement fancy feature" --body - <<EOF
     > Implement my very fancy feature.
     > Can you please review it?
     > EOF
 
   Create a pull request, assigning reviewers:
+    # For GitHub repositories
     $ av pr --reviewers "example,@example-org/example-team"
+    
+    # For GitLab repositories  
+    $ av pr --reviewers "example,@example-group"
 
   Create pull requests for every branch in the stack:
-	$ av pr --all
+    $ av pr --all
 `),
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, _ []string) (reterr error) {
@@ -102,11 +108,6 @@ Examples:
 			return err
 		}
 
-		client, err := getGitHubClient(ctx)
-		if err != nil {
-			return err
-		}
-
 		db, err := getDB(ctx, repo)
 		if err != nil {
 			return err
@@ -130,7 +131,7 @@ Examples:
 		}
 
 		res, err := actions.CreatePullRequest(
-			ctx, repo, client, tx,
+			ctx, repo, tx,
 			actions.CreatePullRequestOpts{
 				BranchName: branchName,
 				Title:      prFlags.Title,
@@ -151,7 +152,17 @@ Examples:
 		// Do this after creating the PR and committing the transaction so that
 		// our local database is up-to-date even if this fails.
 		if len(prFlags.Reviewers) > 0 {
-			if err := actions.AddPullRequestReviewers(ctx, client, res.Pull.ID, prFlags.Reviewers); err != nil {
+			origin, err := repo.Origin(ctx)
+			if err != nil {
+				return errors.WrapIf(err, "failed to determine repository origin")
+			}
+			
+			provider, err := vcs.DetectAndCreateProvider(ctx, origin.URL.String())
+			if err != nil {
+				return errors.WrapIf(err, "failed to create provider for reviewer assignment")
+			}
+			
+			if err := actions.AddPullRequestReviewers(ctx, provider, res.Pull.GetID(), prFlags.Reviewers); err != nil {
 				return err
 			}
 		}
@@ -162,7 +173,7 @@ Examples:
 				return err
 			}
 
-			return actions.UpdatePullRequestsWithStack(ctx, client, tx, stackBranches)
+			return actions.UpdatePullRequestsWithStack(ctx, repo, tx, stackBranches)
 		}
 
 		return nil
@@ -216,18 +227,14 @@ func submitAll(ctx context.Context, current bool, draft bool) error {
 
 	// ensure pull requests for each branch in the stack
 	createdPullRequestPermalinks := []string{}
-	client, err := getGitHubClient(ctx)
-	if err != nil {
-		return err
-	}
 	for _, branchName := range branchesToSubmit {
 		// TODO: should probably commit database after every call to this
-		// since we're just syncing state from GitHub
+		// since we're just syncing state from the provider
 
 		draft := config.Av.PullRequest.Draft || draft
 
 		result, err := actions.CreatePullRequest(
-			ctx, repo, client, tx,
+			ctx, repo, tx,
 			actions.CreatePullRequestOpts{
 				BranchName:    branchName,
 				Draft:         draft,
@@ -243,16 +250,15 @@ func submitAll(ctx context.Context, current bool, draft bool) error {
 				result.Branch.PullRequest.Permalink,
 			)
 		}
-		// make sure the base branch of the PR is up to date if it already exists
-		if !result.Created && result.Pull.BaseRefName != result.Branch.Parent.Name {
-			if _, err := client.UpdatePullRequest(
-				ctx, githubv4.UpdatePullRequestInput{
-					PullRequestID: githubv4.ID(result.Branch.PullRequest.ID),
-					BaseRefName:   gh.Ptr(githubv4.String(result.Branch.Parent.Name)),
-				},
-			); err != nil {
-				return errors.Wrap(err, "failed to update PR base branch")
-			}
+		// TODO: make sure the base branch of the PR is up to date if it already exists
+		// This functionality needs to be added to the VCS interface to support base branch updates
+		// for both GitHub and GitLab providers
+		if !result.Created && result.Pull.BaseBranchName() != result.Branch.Parent.Name {
+			logrus.WithFields(logrus.Fields{
+				"branch": branchName,
+				"current_base": result.Pull.BaseBranchName(),
+				"expected_base": result.Branch.Parent.Name,
+			}).Warn("PR base branch needs updating but VCS interface doesn't support it yet")
 		}
 	}
 
@@ -262,7 +268,7 @@ func submitAll(ctx context.Context, current bool, draft bool) error {
 	}
 
 	if config.Av.PullRequest.WriteStack {
-		if err = actions.UpdatePullRequestsWithStack(ctx, client, tx, currentStackBranches); err != nil {
+		if err = actions.UpdatePullRequestsWithStack(ctx, repo, tx, currentStackBranches); err != nil {
 			return err
 		}
 	}
@@ -397,7 +403,7 @@ func init() {
 	)
 	prCmd.Flags().StringSliceVar(
 		&prFlags.Reviewers, "reviewers", nil,
-		"add reviewers to the pull request (can be usernames or team names)",
+		"add reviewers to the pull request (usernames, team names, or group names)",
 	)
 	prCmd.Flags().BoolVar(
 		&prFlags.Queue, "queue", false,
