@@ -464,3 +464,63 @@ func (r *Repo) Origin(ctx context.Context) (*Origin, error) {
 		RepoSlug: repoSlug,
 	}, nil
 }
+
+// Worktree represents a git worktree.
+type Worktree struct {
+	Path       string
+	Branch     string
+	Head       string
+	IsDetached bool
+}
+
+// ListWorktrees returns a list of all worktrees in the repository.
+func (r *Repo) ListWorktrees(ctx context.Context) ([]Worktree, error) {
+	output, err := r.Run(ctx, &RunOpts{
+		Args:      []string{"worktree", "list", "--porcelain"},
+		ExitError: true,
+	})
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to list worktrees")
+	}
+
+	var worktrees []Worktree
+	var current *Worktree
+
+	for _, line := range output.Lines() {
+		if line == "" {
+			if current != nil {
+				worktrees = append(worktrees, *current)
+				current = nil
+			}
+			continue
+		}
+
+		if strings.HasPrefix(line, "worktree ") {
+			if current != nil {
+				worktrees = append(worktrees, *current)
+			}
+			current = &Worktree{
+				Path: strings.TrimPrefix(line, "worktree "),
+			}
+		} else if strings.HasPrefix(line, "HEAD ") {
+			if current != nil {
+				current.Head = strings.TrimPrefix(line, "HEAD ")
+			}
+		} else if strings.HasPrefix(line, "branch ") {
+			if current != nil {
+				fullBranch := strings.TrimPrefix(line, "branch ")
+				current.Branch = strings.TrimPrefix(fullBranch, "refs/heads/")
+			}
+		} else if line == "detached" {
+			if current != nil {
+				current.IsDetached = true
+			}
+		}
+	}
+
+	if current != nil {
+		worktrees = append(worktrees, *current)
+	}
+
+	return worktrees, nil
+}

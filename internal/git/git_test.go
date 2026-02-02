@@ -46,3 +46,40 @@ func TestGetRemoteName(t *testing.T) {
 	require.Equal(t, avGitRepo.GetRemoteName(), "new-remote")
 	config.Av.Remote = ""
 }
+
+func TestListWorktrees(t *testing.T) {
+	repo := gittest.NewTempRepo(t)
+	avGitRepo := repo.AsAvGitRepo()
+
+	worktrees, err := avGitRepo.ListWorktrees(t.Context())
+	require.NoError(t, err)
+	require.Len(t, worktrees, 1)
+	require.Equal(t, repo.RepoDir(), worktrees[0].Path)
+	require.Equal(t, "main", worktrees[0].Branch)
+	require.False(t, worktrees[0].IsDetached)
+	require.NotEmpty(t, worktrees[0].Head)
+
+	repo.Git(t, "checkout", "-b", "feature")
+	repo.Git(t, "worktree", "add", "../other-worktree", "-b", "other-branch")
+
+	worktrees, err = avGitRepo.ListWorktrees(t.Context())
+	require.NoError(t, err)
+	require.Len(t, worktrees, 2)
+
+	var mainWorktree, otherWorktree git.Worktree
+	for _, wt := range worktrees {
+		if wt.Branch == "feature" {
+			mainWorktree = wt
+		} else if wt.Branch == "other-branch" {
+			otherWorktree = wt
+		}
+	}
+
+	require.Equal(t, repo.RepoDir(), mainWorktree.Path)
+	require.Equal(t, "feature", mainWorktree.Branch)
+	require.False(t, mainWorktree.IsDetached)
+
+	require.Contains(t, otherWorktree.Path, "other-worktree")
+	require.Equal(t, "other-branch", otherWorktree.Branch)
+	require.False(t, otherWorktree.IsDetached)
+}
