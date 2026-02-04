@@ -83,3 +83,49 @@ func TestListWorktrees(t *testing.T) {
 	require.Equal(t, "other-branch", otherWorktree.Branch)
 	require.False(t, otherWorktree.IsDetached)
 }
+
+func TestIsBranchCheckedOut(t *testing.T) {
+	repo := gittest.NewTempRepo(t)
+	avGitRepo := repo.AsAvGitRepo()
+
+	// Initially on main branch
+	isCheckedOut, path, err := avGitRepo.IsBranchCheckedOut(t.Context(), "main")
+	require.NoError(t, err)
+	require.True(t, isCheckedOut)
+	require.Equal(t, repo.RepoDir(), path)
+
+	// Test with full ref format
+	isCheckedOut, path, err = avGitRepo.IsBranchCheckedOut(t.Context(), "refs/heads/main")
+	require.NoError(t, err)
+	require.True(t, isCheckedOut)
+	require.Equal(t, repo.RepoDir(), path)
+
+	// Create a new branch and worktree
+	repo.Git(t, "checkout", "-b", "feature")
+	repo.Git(t, "worktree", "add", "../other-worktree", "-b", "other-branch")
+
+	// Check feature branch (current branch)
+	isCheckedOut, path, err = avGitRepo.IsBranchCheckedOut(t.Context(), "feature")
+	require.NoError(t, err)
+	require.True(t, isCheckedOut)
+	require.Equal(t, repo.RepoDir(), path)
+
+	// Check other-branch (in other worktree)
+	isCheckedOut, path, err = avGitRepo.IsBranchCheckedOut(t.Context(), "other-branch")
+	require.NoError(t, err)
+	require.True(t, isCheckedOut)
+	require.Contains(t, path, "other-worktree")
+
+	// Check non-checked-out branch
+	repo.Git(t, "branch", "unused-branch")
+	isCheckedOut, path, err = avGitRepo.IsBranchCheckedOut(t.Context(), "unused-branch")
+	require.NoError(t, err)
+	require.False(t, isCheckedOut)
+	require.Empty(t, path)
+
+	// Check non-existent branch (should return false without error)
+	isCheckedOut, path, err = avGitRepo.IsBranchCheckedOut(t.Context(), "non-existent")
+	require.NoError(t, err)
+	require.False(t, isCheckedOut)
+	require.Empty(t, path)
+}

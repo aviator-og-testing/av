@@ -524,3 +524,30 @@ func (r *Repo) ListWorktrees(ctx context.Context) ([]Worktree, error) {
 
 	return worktrees, nil
 }
+
+// IsBranchCheckedOut checks if the given branch is checked out in any worktree.
+// Returns true if checked out, along with the worktree path where it's checked out.
+// Handles both short branch names (e.g., "feature") and full refs (e.g., "refs/heads/feature").
+func (r *Repo) IsBranchCheckedOut(ctx context.Context, branchName string) (bool, string, error) {
+	worktrees, err := r.ListWorktrees(ctx)
+	if err != nil {
+		return false, "", err
+	}
+
+	// Normalize the input branch name to short form for comparison
+	shortBranchName := strings.TrimPrefix(branchName, "refs/heads/")
+
+	for _, wt := range worktrees {
+		// Skip detached worktrees as they don't have a branch
+		if wt.IsDetached {
+			continue
+		}
+
+		// Compare using short form (Branch is already in short form from ListWorktrees)
+		if wt.Branch == shortBranchName {
+			return true, wt.Path, nil
+		}
+	}
+
+	return false, "", nil
+}
