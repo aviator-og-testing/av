@@ -464,3 +464,125 @@ func (r *Repo) Origin(ctx context.Context) (*Origin, error) {
 		RepoSlug: repoSlug,
 	}, nil
 }
+
+// Worktree represents a Git worktree with its metadata.
+type Worktree struct {
+	// Path is the absolute path to the worktree directory.
+	Path string
+	// Head is the commit SHA that the worktree is currently at.
+	Head string
+	// Branch is the branch name the worktree has checked out (without refs/heads/ prefix).
+	// Empty if the worktree is in detached HEAD state.
+	Branch string
+	// IsBare indicates if this is a bare worktree.
+	IsBare bool
+	// IsDetached indicates if the worktree is in detached HEAD state.
+	IsDetached bool
+	// GitDir is the path to the Git directory for this worktree.
+	// For the main worktree, this is typically .git/
+	// For linked worktrees, this is .git/worktrees/<name>/
+	GitDir string
+}
+
+// ListWorktrees returns all worktrees associated with this repository.
+// It executes `git worktree list --porcelain` and parses the output.
+func (r *Repo) ListWorktrees(ctx context.Context) ([]Worktree, error) {
+	output, err := r.Run(ctx, &RunOpts{
+		Args:      []string{"worktree", "list", "--porcelain"},
+		ExitError: true,
+	})
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to list worktrees")
+	}
+
+	var worktrees []Worktree
+	var current *Worktree
+
+	for _, line := range output.Lines() {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			if current != nil {
+				worktrees = append(worktrees, *current)
+				current = nil
+			}
+			continue
+		}
+
+		if strings.HasPrefix(line, "worktree ") {
+			if current != nil {
+				worktrees = append(worktrees, *current)
+			}
+			current = &Worktree{
+				Path: strings.TrimPrefix(line, "worktree "),
+			}
+		} else if current != nil {
+			if strings.HasPrefix(line, "HEAD ") {
+				current.Head = strings.TrimPrefix(line, "HEAD ")
+			} else if strings.HasPrefix(line, "branch ") {
+				branchRef := strings.TrimPrefix(line, "branch ")
+				current.Branch = strings.TrimPrefix(branchRef, "refs/heads/")
+			} else if line == "bare" {
+				current.IsBare = true
+			} else if line == "detached" {
+				current.IsDetached = true
+			}
+		}
+	}
+
+	if current != nil {
+		worktrees = append(worktrees, *current)
+	}
+
+	// Resolve GitDir for each worktree
+	for i := range worktrees {
+		gitDir, err := r.resolveWorktreeGitDir(ctx, &worktrees[i])
+		if err != nil {
+			return nil, errors.Wrapf(err, "failed to resolve git directory for worktree %s", worktrees[i].Path)
+		}
+		worktrees[i].GitDir = gitDir
+	}
+
+	return worktrees, nil
+}
+
+// resolveWorktreeGitDir determines the git directory for a worktree.
+// For the main worktree, this is the repository's main .git directory.
+// For linked worktrees, this is .git/worktrees/<name>/.
+func (r *Repo) resolveWorktreeGitDir(ctx context.Context, wt *Worktree) (string, error) {
+	// Use git rev-parse --git-dir from within the worktree to get its git directory
+	cmd := exec.CommandContext(ctx, "git", "-C", wt.Path, "rev-parse", "--git-dir")
+	out, err := cmd.Output()
+	if err != nil {
+		return "", errors.Wrapf(err, "failed to get git directory for worktree at %s", wt.Path)
+	}
+
+	gitDir := strings.TrimSpace(string(out))
+
+	// Convert to absolute path if it's relative
+	if !filepath.IsAbs(gitDir) {
+		gitDir = filepath.Join(wt.Path, gitDir)
+	}
+
+	// Clean the path to normalize it
+	gitDir = filepath.Clean(gitDir)
+
+	return gitDir, nil
+}
+
+// FindWorktreeForBranch finds the worktree that has the specified branch checked out.
+// Returns nil if no worktree has the branch checked out.
+// The branchName should be the short branch name (without refs/heads/ prefix).
+func (r *Repo) FindWorktreeForBranch(ctx context.Context, branchName string) (*Worktree, error) {
+	worktrees, err := r.ListWorktrees(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	for i := range worktrees {
+		if worktrees[i].Branch == branchName {
+			return &worktrees[i], nil
+		}
+	}
+
+	return nil, nil
+}
